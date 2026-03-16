@@ -10,30 +10,24 @@ export default function IntentModal({ type, onClose }) {
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async () => {
-
-    if (!title) return
-
-    setSubmitting(true)
-
     navigator.geolocation.getCurrentPosition(async (position) => {
-
-      const { latitude, longitude } = position.coords
-
+      const { latitude, longitude } = position.coords;
+  
       const { error } = await supabase.rpc("create_neighborhood_event", {
         p_title: title,
         p_description: description,
         p_event_type: type,
         lat: latitude,
-        lon: longitude
-      })
-
+        lon: longitude,
+      });
+  
       if (error) {
-        console.error(error)
+        console.error("Error creating event:", error.message);
+      } else {
+        console.log("Event created successfully");
+        window.location.reload();
       }
-
-      window.location.reload()
-
-    })
+    });
   }
 
   return (
