@@ -1,54 +1,93 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import IntentModal from "../components/IntentModal";
 import AuthModal from "../components/AuthModal";
 
 export default function Home() {
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [intentType, setIntentType] = useState(null);
-  const [showAuth, setShowAuth] = useState(false);
+  // 🔹 Core App State
   const [session, setSession] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState([]);
+  const [intentType, setIntentType] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
+
+  // 🔹 Identity State
+  const [firstName, setFirstName] = useState("");
+  const [street, setStreet] = useState("");
 
   // ----------------------------
-  // AUTH HANDSHAKE (DO NOT TOUCH)
+  // INITIALIZING & AUTH
   // ----------------------------
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
       setInitializing(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      setInitializing(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // 🔹 Identity Update Function
+  const updateIdentity = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!firstName || !street) {
+      alert("Please enter your name and street.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        first_name: firstName.trim(),
+        street_name: street.trim(),
+        last_active_at: new Date().toISOString()
+      })
+      .eq("id", user.id);
+
+    if (error) {
+      console.error(error);
+      alert("Something went wrong.");
+    } else {
+      alert("Identity Anchored!");
+      console.log("Identity Anchored.");
+    }
+  };
+
   // ----------------------------
   // FETCH FEED
   // ----------------------------
   const fetchFeed = useCallback(async () => {
-    const { data, error } = await supabase.rpc("get_neighborhood_feed");
-
+    const { data, error } = await supabase
+      .from("neighborhood_events")
+      .select(`
+        *,
+        profiles:profiles!neighborhood_events_user_id_fkey (
+          first_name,
+          street_name
+        )
+      `)
+      .order("created_at", { ascending: false });
+  
     if (error) {
-      console.error("Feed error:", error);
+      console.error("Fetch error:", error);
     } else {
+      console.log("Feed loaded:", data);
       setEvents(data || []);
     }
-
+  
     setLoading(false);
   }, []);
 
   // ----------------------------
-  // REALTIME (FIXED)
+  // REALTIME
   // ----------------------------
   useEffect(() => {
     if (!session) return;
@@ -65,7 +104,7 @@ export default function Home() {
           table: "neighborhood_events",
         },
         () => {
-          fetchFeed(); // ensures distance is correct
+          fetchFeed();
         }
       )
       .subscribe();
@@ -76,47 +115,32 @@ export default function Home() {
   }, [session, fetchFeed]);
 
   // ----------------------------
-  // INITIALIZING
+  // RENDER LOGIC
   // ----------------------------
   if (initializing) {
     return <main style={{ padding: 40 }}>Initializing LoveThy...</main>;
   }
 
-  // ----------------------------
-  // NOT LOGGED IN
-  // ----------------------------
   if (!session) {
     return (
-      <main style={{ padding: 40, textAlign: "center" }}>
+      <main style={{ padding: 40, textAlign: "center", fontFamily: "sans-serif" }}>
         <h2 style={{ fontSize: 28, fontWeight: 800 }}>LoveThy</h2>
         <p>Connect with neighbors nearby.</p>
-
         <button
           onClick={() => setShowAuth(true)}
-          style={{
-            padding: "12px 24px",
-            borderRadius: 8,
-            cursor: "pointer",
-          }}
+          style={{ padding: "12px 24px", borderRadius: 8, cursor: "pointer" }}
         >
           Sign In
         </button>
-
         {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
       </main>
     );
   }
 
-  // ----------------------------
-  // LOADING FEED
-  // ----------------------------
   if (loading) {
-    return <main style={{ padding: 40 }}>Loading nearby activity...</main>;
+    return <main style={{ padding: 40, fontFamily: "sans-serif" }}>Loading nearby activity...</main>;
   }
 
-  // ----------------------------
-  // MAIN UI
-  // ----------------------------
   return (
     <main
       style={{
@@ -127,20 +151,10 @@ export default function Home() {
       }}
     >
       {/* HEADER */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ fontSize: 32, fontWeight: 800 }}>LoveThy</h1>
-
         <button
-          onClick={() => {
-            if (session) supabase.auth.signOut();
-            else setShowAuth(true);
-          }}
+          onClick={() => supabase.auth.signOut()}
           style={{
             background: "none",
             border: "1px solid #eee",
@@ -151,156 +165,80 @@ export default function Home() {
             color: "#555",
           }}
         >
-          {session ? "Sign Out" : "Account"}
+          Sign Out
         </button>
       </div>
 
       {/* ACTION BUTTONS */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 15,
-          marginTop: 20,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 15, marginTop: 20 }}>
         <button
-          style={{
-            padding: 20,
-            borderRadius: 12,
-            border: "none",
-            backgroundColor: "#ff4d4d",
-            color: "white",
-            fontWeight: "bold",
-            cursor: "pointer",
-          }}
+          style={{ padding: 20, borderRadius: 12, border: "none", backgroundColor: "#ff4d4d", color: "white", fontWeight: "bold", cursor: "pointer" }}
           onClick={() => setIntentType("request")}
         >
           Request Support
         </button>
 
         <button
-          style={{
-            padding: 20,
-            borderRadius: 12,
-            border: "none",
-            backgroundColor: "#22c55e",
-            color: "white",
-            fontWeight: "bold",
-            cursor: "pointer",
-          }}
+          style={{ padding: 20, borderRadius: 12, border: "none", backgroundColor: "#22c55e", color: "white", fontWeight: "bold", cursor: "pointer" }}
           onClick={() => setIntentType("offer")}
         >
           Offer Support
         </button>
       </div>
 
-      {/* REFRESH */}
-      <button
-        onClick={() => {
-          setLoading(true);
-          fetchFeed();
-        }}
-        style={{
-          marginTop: 10,
-          border: "none",
-          background: "none",
-          cursor: "pointer",
-          color: "#888",
-          fontSize: "0.8rem",
-        }}
-      >
-        Refresh
-      </button>
-
       <hr style={{ margin: "30px 0", opacity: 0.2 }} />
 
       {/* FEED */}
       <h2>Neighborhood Feed</h2>
-
       {events.length === 0 ? (
         <p>All quiet in the neighborhood.</p>
       ) : (
         events.map((event) => (
-          <div
-            key={event.id || Math.random()}
-            style={{
-              border: "1px solid #f0f0f0",
-              borderRadius: 12,
-              padding: "16px",
-              marginBottom: "12px",
-              backgroundColor:
-                event.event_type === "request" ? "#FFF9F9" : "#F9FFF9",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <small
-                style={{
-                  color: "#777",
-                  fontWeight: "500",
-                  fontFamily: "monospace",
-                }}
-              >
-                👤{" "}
-                {event.user_id
-                  ? `ID: ${event.user_id.slice(0, 8)}`
-                  : "neighbor"}
-              </small>
-
-              <span
-                style={{
-                  fontSize: "0.7rem",
-                  padding: "2px 8px",
-                  borderRadius: "10px",
-                  background:
-                    event.event_type === "request" ? "#FFE5E5" : "#E5FFE5",
-                  color: "#555",
-                  textTransform: "uppercase",
-                }}
-              >
+          <div key={event.id} style={{ border: "1px solid #f0f0f0", borderRadius: 12, padding: "16px", marginBottom: "12px", backgroundColor: event.event_type === "request" ? "#FFF9F9" : "#F9FFF9" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <small style={{ color: "#777" }}>
+  {event.profiles?.first_name || "Neighbor"}
+  {event.profiles?.street_name ? ` • ${event.profiles.street_name}` : ""}
+</small>
+              <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: "10px", background: event.event_type === "request" ? "#FFE5E5" : "#E5FFE5" }}>
                 {event.event_type}
               </span>
             </div>
-
-            <strong
-              style={{
-                display: "block",
-                marginTop: "8px",
-                fontSize: "1.1rem",
-              }}
-            >
-              {event.title}
-            </strong>
-
-            <p style={{ margin: "8px 0", color: "#444" }}>
-              {event.description}
-            </p>
-
-            <small style={{ color: "#888" }}>
-              📍{" "}
-              {event.fuzzy_distance_meters
-                ? `${Math.round(event.fuzzy_distance_meters)}m away`
-                : "Nearby"}
-            </small>
+            <strong style={{ display: "block", marginTop: "8px" }}>{event.title}</strong>
+            <p>{event.description}</p>
           </div>
         ))
       )}
 
-      {/* MODALS */}
-      {intentType && (
-        <IntentModal
-          type={intentType}
-          onClose={() => setIntentType(null)}
+      {/* 🔹 IDENTITY SETUP SECTION */}
+      <div style={{ marginTop: 50, padding: 20, backgroundColor: "#f9f9f9", borderRadius: 12, border: "1px solid #eee" }}>
+        <h4 style={{ margin: "0 0 10px 0" }}>Neighbor Identity</h4>
+        <p style={{ fontSize: "0.8rem", color: "#666", marginBottom: 15 }}>Help neighbors recognize you by adding your name and street.</p>
+        
+        <input
+          placeholder="First name"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          style={{ width: "100%", padding: 10, marginBottom: 10, borderRadius: 8, border: "1px solid #ccc", boxSizing: "border-box" }}
         />
-      )}
 
+        <input
+          placeholder="Street or nearest cross street"
+          value={street}
+          onChange={(e) => setStreet(e.target.value)}
+          style={{ width: "100%", padding: 10, marginBottom: 10, borderRadius: 8, border: "1px solid #ccc", boxSizing: "border-box" }}
+        />
+
+        <button 
+          onClick={updateIdentity}
+          style={{ width: "100%", padding: 12, backgroundColor: "#333", color: "white", borderRadius: 8, border: "none", cursor: "pointer" }}
+        >
+          Save Identity
+        </button>
+      </div>
+
+      {/* MODALS */}
+      {intentType && <IntentModal type={intentType} onClose={() => setIntentType(null)} />}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
     </main>
   );
