@@ -65,25 +65,42 @@ export default function Home() {
   // FETCH FEED
   // ----------------------------
   const fetchFeed = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("neighborhood_events")
-      .select(`
-        *,
-        profiles:profiles!neighborhood_events_user_id_fkey (
-          first_name,
-          street_name
-        )
-      `)
-      .order("created_at", { ascending: false });
+    setLoading(true);
   
-    if (error) {
-      console.error("Fetch error:", error);
-    } else {
-      console.log("Feed loaded:", data);
-      setEvents(data || []);
-    }
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const user_lat = position.coords.latitude;
+        const user_lng = position.coords.longitude;
   
-    setLoading(false);
+        const { data, error } = await supabase.rpc(
+          "get_neighborhood_feed_v2",
+          { user_lat, user_lng }
+        );
+  
+        if (error) {
+          console.error("Feed error:", error);
+        } else {
+          console.log("Accordion Feed Loaded:", data);
+          setEvents(data || []);
+        }
+  
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Location error:", err);
+  
+        // fallback to LA if denied
+        const user_lat = 34.0522;
+        const user_lng = -118.2437;
+  
+        supabase
+          .rpc("get_neighborhood_feed_v2", { user_lat, user_lng })
+          .then(({ data }) => {
+            setEvents(data || []);
+            setLoading(false);
+          });
+      }
+    );
   }, []);
 
   // ----------------------------
@@ -206,6 +223,9 @@ export default function Home() {
             </div>
             <strong style={{ display: "block", marginTop: "8px" }}>{event.title}</strong>
             <p>{event.description}</p>
+            <small style={{ color: "#888" }}>
+  📍 {Math.round(event.fuzzy_distance_meters)}m away
+</small>
           </div>
         ))
       )}

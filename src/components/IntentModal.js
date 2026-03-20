@@ -1,146 +1,117 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { supabase } from "../lib/supabase"
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function IntentModal({ type, onClose }) {
-
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [submitting, setSubmitting] = useState(false)
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const { latitude, longitude } = position.coords;
-  
-      const { error } = await supabase.rpc("create_neighborhood_event", {
-        p_title: title,
-        p_description: description,
-        p_event_type: type,
-        lat: latitude,
-        lon: longitude,
-      });
-  
-      if (error) {
-        console.error("Error creating event:", error.message);
-      } else {
-        console.log("Event created successfully");
-        window.location.reload();
+    if (!title || !description) {
+      alert("Fill everything");
+      return;
+    }
+
+    setLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const user_lat = position.coords.latitude;
+        const user_lng = position.coords.longitude;
+
+        const { data: { user } } = await supabase.auth.getUser();
+
+        const { error } = await supabase
+          .from("neighborhood_events")
+          .insert({
+            title,
+            description,
+            event_type: type,
+            user_id: user.id,
+            location: `SRID=4326;POINT(${user_lng} ${user_lat})`
+          });
+
+        if (error) {
+          console.error("Insert error:", error);
+          alert("Error creating post");
+        } else {
+          console.log("Post created");
+          onClose();
+        }
+
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Location error:", err);
+        alert("Location required to post");
+        setLoading(false);
       }
-    });
-  }
+    );
+  };
 
   return (
-    <div style={styles.overlay}>
-
-      <div style={styles.modal}>
-
-        <h2>{type === "request" ? "I could use a hand" : "I'm here to help"}</h2>
+    <div style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      background: "rgba(0,0,0,0.4)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center"
+    }}>
+      <div style={{
+        background: "white",
+        padding: 20,
+        borderRadius: 12,
+        width: "90%",
+        maxWidth: 400
+      }}>
+        <h3>{type === "request" ? "Request Support" : "Offer Support"}</h3>
 
         <input
           placeholder="Title"
-          style={styles.input}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
         />
 
         <textarea
-          placeholder="Add details (optional)"
-          style={styles.textarea}
+          placeholder="Description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
         />
 
-        <div style={styles.actions}>
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          style={{
+            width: "100%",
+            padding: 10,
+            background: "#333",
+            color: "white",
+            borderRadius: 8,
+            border: "none"
+          }}
+        >
+          {loading ? "Posting..." : "Submit"}
+        </button>
 
-          <button style={styles.cancelBtn} onClick={onClose}>
-            Cancel
-          </button>
-
-          <button
-            style={type === "request" ? styles.requestBtn : styles.offerBtn}
-            onClick={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? "Posting..." : "Post to Neighborhood"}
-          </button>
-
-        </div>
-
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            padding: 10
+          }}
+        >
+          Cancel
+        </button>
       </div>
-
     </div>
-  )
-}
-
-const styles = {
-
-  overlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 1000
-  },
-
-  modal: {
-    backgroundColor: "#fff",
-    padding: "30px",
-    borderRadius: "16px",
-    width: "90%",
-    maxWidth: "400px"
-  },
-
-  input: {
-    width: "100%",
-    padding: "12px",
-    marginBottom: "15px",
-    borderRadius: "8px",
-    border: "1px solid #ddd"
-  },
-
-  textarea: {
-    width: "100%",
-    padding: "12px",
-    marginBottom: "20px",
-    borderRadius: "8px",
-    border: "1px solid #ddd"
-  },
-
-  actions: {
-    display: "flex",
-    gap: "10px"
-  },
-
-  cancelBtn: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: "8px",
-    border: "1px solid #ddd",
-    backgroundColor: "#fff"
-  },
-
-  requestBtn: {
-    flex: 2,
-    padding: "12px",
-    borderRadius: "8px",
-    border: "none",
-    backgroundColor: "#e63946",
-    color: "#fff"
-  },
-
-  offerBtn: {
-    flex: 2,
-    padding: "12px",
-    borderRadius: "8px",
-    border: "none",
-    backgroundColor: "#2a9d8f",
-    color: "#fff"
-  }
-
+  );
 }
