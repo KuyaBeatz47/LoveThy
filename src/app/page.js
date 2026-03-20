@@ -72,33 +72,55 @@ export default function Home() {
         const user_lat = position.coords.latitude;
         const user_lng = position.coords.longitude;
   
-        const { data, error } = await supabase.rpc(
-          "get_neighborhood_feed_v2",
-          { user_lat, user_lng }
-        );
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
   
-        if (error) {
-          console.error("Feed error:", error);
-        } else {
-          console.log("Accordion Feed Loaded:", data);
-          setEvents(data || []);
+          const { data, error } = await supabase.rpc(
+            "get_neighborhood_feed_v4",
+            {
+              user_lat,
+              user_lng,
+              viewer_id: user?.id
+            }
+          );
+  
+          if (error) {
+            console.error("Feed error:", error);
+          } else {
+            console.log("V4 Feed Loaded:", data);
+            setEvents(data || []);
+          }
+        } catch (err) {
+          console.error("Unexpected error:", err);
         }
   
         setLoading(false);
       },
-      (err) => {
+      async (err) => {
         console.error("Location error:", err);
   
-        // fallback to LA if denied
+        // fallback (LA)
         const user_lat = 34.0522;
         const user_lng = -118.2437;
   
-        supabase
-          .rpc("get_neighborhood_feed_v2", { user_lat, user_lng })
-          .then(({ data }) => {
-            setEvents(data || []);
-            setLoading(false);
-          });
+        const { data: { user } } = await supabase.auth.getUser();
+  
+        const { data, error } = await supabase.rpc(
+          "get_neighborhood_feed_v4",
+          {
+            user_lat,
+            user_lng,
+            viewer_id: user?.id
+          }
+        );
+  
+        if (error) {
+          console.error("Fallback feed error:", error);
+        } else {
+          setEvents(data || []);
+        }
+  
+        setLoading(false);
       }
     );
   }, []);
