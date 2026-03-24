@@ -16,92 +16,130 @@ export default function IntentModal({ type, onClose }) {
 
     setLoading(true);
 
-    // 1. Capture Real GPS
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const user_lat = position.coords.latitude;
-        const user_lng = position.coords.longitude;
+    try {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
 
-        try {
-          // 2. Get Authenticated User
-          const { data: { user }, error: authError } = await supabase.auth.getUser();
-          
-          if (authError || !user) {
-            alert("You must be logged in to post.");
-            setLoading(false);
-            return;
-          }
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
 
-          // 3. Insert into neighborhood_events
-          const { error: insertError } = await supabase
+          const { error } = await supabase
             .from("neighborhood_events")
             .insert({
+              user_id: user.id,
+              event_type: type,
               title,
               description,
-              event_type: type, // 'request' or 'offer'
-              user_id: user.id,
-              // PostGIS helper: Longitude then Latitude
-              location: `POINT(${user_lng} ${user_lat})`
+              location: `POINT(${lng} ${lat})`, // ✅ CORRECT FORMAT
             });
 
-          if (insertError) {
-            console.error("Insert Error:", insertError);
-            alert(`Error: ${insertError.message}`);
+          if (error) {
+            console.error(error);
+            alert("Error creating post.");
           } else {
-            console.log("✅ Post Created Successfully");
-            onClose(); // Close modal on success
+            alert("Posted successfully!");
+            onClose();
           }
-        } catch (err) {
-          console.error("Unexpected Error:", err);
-        } finally {
+
+          setLoading(false);
+        },
+        (err) => {
+          console.error("Location error:", err);
+          alert("Location required to post.");
           setLoading(false);
         }
-      },
-      (geoError) => {
-        console.error("Geolocation Error:", geoError);
-        alert("Location access is required to post to your neighborhood.");
-        setLoading(false);
-      },
-      { enableHighAccuracy: true }
-    );
+      );
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      alert("Something went wrong.");
+      setLoading(false);
+    }
   };
 
   return (
-    <div style={modalOverlayStyle}>
-      <div style={modalContentStyle}>
-        <h2 style={{ marginTop: 0 }}>
-          {type === "request" ? "Request Support" : "Offer Support"}
-        </h2>
-        
-        <p style={{ fontSize: "0.9rem", color: "#2C3E50" }}>
-          This will be visible to neighbors within 0.75 miles.
-        </p>
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        backgroundColor: "rgba(0,0,0,0.5)",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          background: "white",
+          padding: 20,
+          borderRadius: 12,
+          width: "90%",
+          maxWidth: 400,
+        }}
+      >
+        <h3 style={{ marginBottom: 10 }}>
+          {type === "request" ? "Request Help" : "Offer Help"}
+        </h3>
 
         <input
-          placeholder="What do you need/offer?"
+          placeholder="Title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          style={inputStyle}
+          style={{
+            width: "100%",
+            padding: 10,
+            marginBottom: 10,
+            borderRadius: 8,
+            border: "1px solid #ccc",
+          }}
         />
 
         <textarea
-          placeholder="Add some details..."
+          placeholder="Description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          style={{ ...inputStyle, height: "100px", resize: "none" }}
+          style={{
+            width: "100%",
+            padding: 10,
+            marginBottom: 10,
+            borderRadius: 8,
+            border: "1px solid #ccc",
+          }}
         />
 
         <button
           onClick={handleSubmit}
           disabled={loading}
-          style={submitButtonStyle}
+          style={{
+            width: "100%",
+            padding: 12,
+            backgroundColor: "#2C3E50",
+            color: "white",
+            borderRadius: 8,
+            border: "none",
+            cursor: "pointer",
+          }}
         >
-          {loading ? "Posting..." : "Broadcast to Neighborhood"}
+          {loading ? "Posting..." : "Post"}
         </button>
 
         <button
           onClick={onClose}
-          style={cancelButtonStyle}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            padding: 10,
+            background: "#eee",
+            borderRadius: 8,
+            border: "none",
+            cursor: "pointer",
+          }}
         >
           Cancel
         </button>
@@ -109,59 +147,3 @@ export default function IntentModal({ type, onClose }) {
     </div>
   );
 }
-
-// --- Minimalist "Calm" Styling ---
-
-const modalOverlayStyle = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  width: "100%",
-  height: "100%",
-  background: "rgba(0,0,0,0.4)",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 1000,
-};
-
-const modalContentStyle = {
-  background: "white",
-  padding: "24px",
-  borderRadius: "16px",
-  width: "90%",
-  maxWidth: "420px",
-  boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
-};
-
-const inputStyle = {
-  width: "100%",
-  padding: "12px",
-  marginBottom: "16px",
-  borderRadius: "8px",
-  border: "1px solid #ddd",
-  fontSize: "1rem",
-  boxSizing: "border-box",
-};
-
-const submitButtonStyle = {
-  width: "100%",
-  padding: "14px",
-  background: "#1a1a1a",
-  color: "white",
-  borderRadius: "8px",
-  border: "none",
-  fontSize: "1rem",
-  fontWeight: "600",
-  cursor: "pointer",
-};
-
-const cancelButtonStyle = {
-  width: "100%",
-  marginTop: "12px",
-  padding: "10px",
-  background: "transparent",
-  border: "none",
-  color: "#2C3E50",
-  cursor: "pointer",
-};

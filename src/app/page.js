@@ -66,65 +66,63 @@ export default function Home() {
   // ----------------------------
   const fetchFeed = useCallback(async () => {
     setLoading(true);
-  
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const user_lat = position.coords.latitude;
         const user_lng = position.coords.longitude;
-  
+
         try {
           const { data: { user } } = await supabase.auth.getUser();
-  
+
           const { data, error } = await supabase.rpc(
-            "get_neighborhood_feed_v4",
+            "get_neighborhood_feed_v5",
             {
               user_lat,
               user_lng,
               viewer_id: user?.id
             }
           );
-  
+
           if (error) {
             console.error("Feed error:", error);
+            setEvents([]);
           } else {
-            console.log("V4 Feed Loaded:", data);
-            setEvents(data || []);
+            console.log("Feed Data:", data);
+            setEvents(Array.isArray(data) ? data : []);
           }
+
         } catch (err) {
           console.error("Unexpected error:", err);
+          setEvents([]);
         }
-  
+
         setLoading(false);
       },
-      async (err) => {
+      (err) => {
         console.error("Location error:", err);
-  
-        // fallback (LA)
-        const user_lat = 34.0522;
-        const user_lng = -118.2437;
-  
-        const { data: { user } } = await supabase.auth.getUser();
-  
-        const { data, error } = await supabase.rpc(
-          "get_neighborhood_feed_v4",
-          {
-            user_lat,
-            user_lng,
-            viewer_id: user?.id
-          }
-        );
-  
-        if (error) {
-          console.error("Fallback feed error:", error);
-        } else {
-          setEvents(data || []);
-        }
-  
+        setEvents([]);
         setLoading(false);
       }
     );
-  }, []);
-
+  }, []);              
+  const joinRide = async (eventId) => {
+    const { data: { user } } = await supabase.auth.getUser();
+  
+    const { error } = await supabase
+      .from("responses")
+      .insert({
+        event_id: eventId,
+        helper_id: user.id
+      });
+  
+    if (error) {
+      console.error(error);
+      alert("You're already in or something went wrong");
+    } else {
+      alert("You're in 🚗");
+    }
+  };
   // ----------------------------
   // REALTIME
   // ----------------------------
@@ -154,7 +152,7 @@ export default function Home() {
   }, [session, fetchFeed]);
 
   // ----------------------------
-  // RENDER LOGIC
+  // RENDER LOGIC                                                                                                  
   // ----------------------------
   if (initializing) {
     return <main style={{ padding: 40 }}>Initializing LoveThy...</main>;
@@ -223,34 +221,145 @@ export default function Home() {
         >
           Offer Support
         </button>
+        <button
+  style={{
+    padding: 20,
+    borderRadius: 12,
+    backgroundColor: "#3b82f6",
+    color: "white"
+  }}
+  onClick={() => setIntentType("carpool")}
+>
+  Carpool
+</button>
       </div>
 
       <hr style={{ margin: "30px 0", opacity: 0.2 }} />
 
       {/* FEED */}
       <h2>Neighborhood Feed</h2>
-      {events.length === 0 ? (
-        <p>All quiet in the neighborhood.</p>
-      ) : (
-        events.map((event) => (
-          <div key={event.id} style={{ border: "1px solid #f0f0f0", borderRadius: 12, padding: "16px", marginBottom: "12px", backgroundColor: event.event_type === "request" ? "#FFF9F9" : "#F9FFF9" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <small style={{ color: "#777" }}>
-  {event.profiles?.first_name || "Neighbor"}
-  {event.profiles?.street_name ? ` • ${event.profiles.street_name}` : ""}
-</small>
-              <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: "10px", background: event.event_type === "request" ? "#FFE5E5" : "#E5FFE5" }}>
-                {event.event_type}
-              </span>
-            </div>
-            <strong style={{ display: "block", marginTop: "8px" }}>{event.title}</strong>
-            <p>{event.description}</p>
-            <small style={{ color: "#888" }}>
-  📍 {Math.round(event.fuzzy_distance_meters)}m away
-</small>
+
+{events.length === 0 ? (
+  <p>All quiet in the neighborhood.</p>
+) : (
+  events.map((event) => (
+    <div
+      key={event.id}
+      style={{
+        border: "1px solid #f0f0f0",
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12
+      }}
+    >
+      <small style={{ color: "#2C3E50", fontWeight: 600 }}>
+        {event.author_name || "Neighbor"}
+        {event.author_street ? ` • ${event.author_street}` : ""}
+      </small>
+  
+      <strong style={{ display: "block", marginTop: 8 }}>
+        {event.title}
+      </strong>
+  
+      <p>{event.description}</p>
+  
+      {event.event_type === "carpool" && ( 
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px",
+            backgroundColor: "#fcfcfc",
+            borderRadius: "8px",
+            border: "1px solid #eee"
+          }}
+        >
+          <div style={{ marginBottom: 8 }}>
+            <small style={{ fontWeight: 700, color: "#555" }}>
+              {event.join_count > 0
+                ? `${event.join_count} neighbors joining`
+                : "Be the first to join"}
+            </small>
           </div>
-        ))
+          {(() => {
+  let neighbors = [];
+
+  try {
+    if (Array.isArray(event.neighbors_joining)) {
+      neighbors = event.neighbors_joining;
+    } else if (typeof event.neighbors_joining === "string") {
+      neighbors = JSON.parse(event.neighbors_joining);
+    }
+  } catch (e) {
+    neighbors = [];
+  }
+
+  return neighbors.length > 0 && (
+    <div style={{ marginTop: 8, marginBottom: 12 }}>
+      {neighbors.map((n, i) => (
+        <div key={i} style={{ fontSize: "0.85rem", color: "#555" }}>
+          🤝 {n.first_name || "Neighbor"}{" "}
+          {n.street_name ? `• ${n.street_name}` : ""}
+        </div>
+      ))}
+    </div>
+  );
+})()}
+  
+          {Array.isArray(event.neighbors_joining) &&
+            event.neighbors_joining.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                {event.neighbors_joining.map((n, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      fontSize: "0.85rem",
+                      color: "#666",
+                      marginBottom: 4
+                    }}
+                  >
+                    🤝 {n.first_name || "Neighbor"}{" "}
+                    {n.street_name ? `• ${n.street_name}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+  
+          <button
+            onClick={() => joinRide(event.id)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              borderRadius: 8,
+              border: "none",
+              backgroundColor: "#111",
+              color: "white",
+              fontWeight: "600",
+              cursor: "pointer"
+            }}
+            >
+              {event.event_type === "carpool" && (event.overlap_count || 0) > 0 && (
+  <div
+    style={{
+      marginTop: 8,
+      marginBottom: 8,
+      fontSize: "0.8rem",
+      color: "#888",
+      fontStyle: "italic"
+    }}
+  >
+    {event.overlap_count} nearby ride
+    {event.overlap_count > 1 ? "s" : ""} heading this way
+  </div>
+)}
+            Join Ride
+          </button>
+        </div>
       )}
+      
+      </div>
+))
+)}
+
 
       {/* 🔹 IDENTITY SETUP SECTION */}
       <div style={{ marginTop: 50, padding: 20, backgroundColor: "#f9f9f9", borderRadius: 12, border: "1px solid #eee" }}>
