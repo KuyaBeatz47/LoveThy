@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import IntentModal from "../components/IntentModal";
-import AuthModal from "../components/AuthModal";
+import IntentModal from "./components/IntentModal";
+import AuthModal from "./components/AuthModal";
 
 export default function Home() {
   const [session, setSession] = useState(null);
